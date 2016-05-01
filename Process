@@ -1,0 +1,133 @@
+//My process with Raspberry Pi explained
+
+//Plug wifi card in
+
+//Make sure wi-fi network speed is set to B (11mbps) or G(54mbps) 
+
+apt-get update
+
+//Download http://libtins.github.io/download/
+
+sudo apt-get update && sudo apt-get upgrade     
+sudo apt-get install cmake
+sudo apt-get install libssl
+sudo apt-get install libpcap-dev
+
+//check that the dependency installations by doing the following
+
+apt --installed list | grep cmake
+apt --installed list | grep libssl
+apt --installed list | grep libpcap-dev
+
+
+tar zxf libtins-master.tar.gz // to extract the lib tons download
+
+// then Compile libtins 
+
+mkdir build
+cd build
+cmake ../
+make
+
+//download dot11decrypt https://github.com/mfontanini/dot11decrypt
+
+//now start monitor mode in previous step I used
+
+lsusb   //to see wifi card
+ifconfig   //to confirm the wifi has created a wlan interface 
+ifconfig -a   //this will scan all interfaces, the wifi will usually be wlan0 if it's there, so then type:
+ifconfig wlan0 up   //to turn of wifi card
+
+iwlist wlan0 scan  //search for target router
+
+iwconfig wlan0 channel *   // * for what channel shows up
+
+sudo airmon-ng start wlan0
+
+//Once you've done the sudo airmon-ng start wlan0 *           (where * is the channel number you got from iwlist)
+
+//start dot11decrypt
+
+./dot11decrypt wlan0mon WIFI_SSID_HERE:WIFI_PASSWORD_HERE
+
+//(type the ./ as part of the command too)
+//This will give you a tap0 interface in ifconfig, which I used tcpdump to read all the decrypted data from:
+
+sudo tcpdump -i tap0 -n    //This will give a pretty raw output from dot11decrypt through tcpdump
+sudo tcpdump -vvv -s 0 -i tap0 -l -n port 53     //This will just give dns queries out, so if your phone loads anything online you'll see the query for it
+
+//then redirect the decrypted tcpdump output to a file, I've called the file 'decrypted'
+sudo tcpdump -vvv -s 0 -i tap0 -l -n port 53 > ~/decrypted 
+
+cd ~
+pwd
+//path is noted 
+
+//(from http://www.dabeaz.com/usenix2009/generators/follow.py)
+
+//the following code is copied into a file named follow.py
+
+import time
+import re
+
+def follow(thefile):
+    thefile.seek(0,2)
+    while True:
+        line = thefile.readline()
+        if not line:
+            time.sleep(0.1)
+            continue
+        yield line
+
+if __name__ == '__main__':
+    logfile = open("/root/decrypted","r")
+    loglines = follow(logfile)
+    for line in loglines:
+#uncomment the next line for debugging
+#   print line,   
+//save file and run using python
+
+python follow.py
+
+//connect phone to the router 
+
+//Now the wifi card is gathering data on mon0 , decrypting that using dot11decrypt and outputting to the tap0 interface, then going 
+//through tcpdump to the decrypted file
+//and finally being loaded into python.  
+
+//Once I had all this installed I started the system like this:
+
+ifconfig
+[sudo service network-manager stop
+sudo pkill wpa_supplicant]
+sudo airmon-ng start wlan0 * 
+./dot11decrypt wlan0mon wpa:WIFI_SSID_HERE:WIFI_PASSWORD_HERE
+//Open a new terminal window, and leave dot11decrypt running in the other terminal
+sudo tcpdump -vvv -s 0 -i tap0 -l -n port 53 > ~/decrypted      //this was the command for monitoring DNS requests
+//Open a new terminal window, leave tcpdump running in its own terminal too
+python follow.py 
+
+
+//What I have left to do is to modify the follow.py with those 7 variables for the 7 led strips on the hat
+
+//do regex matching on the line variable to set the led variables true/false
+
+//Add GPIO code to turn on a given led strip if a given variable is true.
+
+#These search for facebook and do something if they're found
+apple = re.search("(apple.com)", line) 
+if apple:
+#GPIO stuff goes here - replace the prints in these with your gpio stuff to light LEDs
+print("Bingo:", apple.group(1))
+ 
+facebook = re.search("(facebook.com)", line)
+if facebook:
+#Do GPIO LED for Facebook
+print("Bingo:", facebook.group(1))
+
+//This is also a useful way for searching for multiple ip addresses: Within the \b tags below the first 2 to 3 groups of digits of the ip are included (omit the last 1 or 2 groups) [you can google for ip address ranges of companies you want to be alerted to]
+facebookip = re.compile(r'(\b31.13.24\b)|(\b31.13\b)|(\b66.220.144\b)|(\b69.63.176\b)|(\b69.171.224\b)|(\b74.119.76\b)|(\b103.4.96\b)|(\b173.252.64\b)(\b204.15.20\b)')
+if(facebookip.search(line)):
+
+//Do GPIO LED for Facebook IP addresses
+print("Bingo: facebook IP hit")
